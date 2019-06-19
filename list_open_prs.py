@@ -133,7 +133,7 @@ for repo in get_open_prs(ORGANIZATION, 'OPEN'):
 prs.sort(key=lambda a: a['age'])
 for pr in prs:
     print("""\
-@{user} submitted {repo_name} "{title}", updated {age}:
+@{user} submitted {repo_name} "{title}", updated {age} ago:
     - {url}""".format(**pr))
     if pr.get('reviewers'):
         print('    - Reviewed by: {reviewers}'.format(**pr))
