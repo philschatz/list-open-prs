@@ -138,5 +138,5 @@ for pr in prs:
     if pr.get('reviewers'):
         print('    - Reviewed by: {reviewers}'.format(**pr))
     if pr.get('requested_reviewers'):
-        print('    - Pending reviewers from: {requested_reviewers}'.format(
+        print('    - Pending reviews from: {requested_reviewers}'.format(
             **pr))
