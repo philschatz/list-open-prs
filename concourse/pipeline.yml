@@ -4,11 +4,21 @@ resources:
   type: git
   source:
     uri: https://github.com/karenc/list-open-prs.git
+- name: daily-checkin
+  type: time
+  source:
+    location: America/Chicago
+    start: 10:00
+    stop: 10:30
+    days: [Monday, Tuesday, Wednesday, Thursday, Friday]
 
 jobs:
 - name: job-list-open-prs
   public: true
+  serial: true
   plan:
+  - get: daily-checkin
+    trigger: true
   - get: list-open-prs
   - task: generate-list
     config:
