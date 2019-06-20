@@ -11,6 +11,15 @@ resources:
     start: 10:00
     stop: 10:30
     days: [Monday, Tuesday, Wednesday, Thursday, Friday]
+- name: notify-slack
+  type: slack
+  source:
+    url: ((slack-webhook-url))
+
+resource_types:
+  - name: slack
+    type: docker-image
+    source: {repository: pumazi/concourse-slack-notification-resource}
 
 jobs:
 - name: job-list-open-prs
@@ -51,3 +60,8 @@ jobs:
       run:
         path: cat
         args: [open-prs/out]
+
+    on_success:
+      put: notify-slack
+      params:
+        text_file: open-prs/out
