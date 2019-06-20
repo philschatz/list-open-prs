@@ -33,7 +33,7 @@ query {
             nodes {
                 name
                 pullRequests(states: %s
-                             first: 100
+                             first: 20
                              orderBy: { field: UPDATED_AT, direction: DESC }) {
                     nodes {
                         url
@@ -43,7 +43,7 @@ query {
                         author {
                             login
                         }
-                        reviews(first: 10) {
+                        reviews(first: 50) {
                             nodes {
                                 author {
                                     login
@@ -82,23 +82,21 @@ query {
 
 
 def format_reviewer(github_username):
-    if github_username in REVIEWERS:
-        return '@{}'.format(REVIEWERS[github_username])
-    return github_username
+    return REVIEWERS.get(github_username, github_username)
 
 
 DEVELOPERS = {
-    # github username: slack username
-    'karenc': 'karen',
-    'pumazi': 'mulich',
-    'therealmarv': 'therealmarv',
-    'philschatz': 'phil',
-    'm1yag1': 'mike',
+    # github username: slack userid
+    'karenc': '<@U0F9C99ST>', # karen
+    'pumazi': '<@U0F988KSQ>', # mulich
+    'therealmarv': '<@U340WT25C>', # therealmarv
+    'philschatz': '<@U0F5LRG3Z>', # phil
+    'm1yag1': '<@U0F55RAAG>', # mike
 }
 REVIEWERS = {
-    'helenemccarron': 'hélène',
-    'tomjw64': 'Thomas',
-    'brittany-johnson': 'BrittanyJ',
+    'helenemccarron': '<@U0FU55RRT>', # hélène
+    'tomjw64': '<@U199K9DTJ>', # Thomas
+    'brittany-johnson': '<@U7FHVAJ4T>', # BrittanyJ
 }
 REVIEWERS.update(DEVELOPERS)
 
@@ -111,13 +109,18 @@ for repo in get_open_prs(ORGANIZATION, 'OPEN'):
         createdAt = datetime.strptime(pr['createdAt'], '%Y-%m-%dT%H:%M:%SZ')
         author = pr['author']['login']
         age = (today - updatedAt).days
-        reviewers = {
-            format_reviewer(r['author']['login']): r['state']
-            for r in pr['reviews']['nodes']}
-        requested_reviewers = set([
-            format_reviewer(r['requestedReviewer']['login'])
-            for r in pr['reviewRequests']['nodes']])
         if author in DEVELOPERS and age < 31:
+            reviewers = {}
+            for r in pr['reviews']['nodes']:
+                if r['author']['login'] == author:
+                    continue
+                reviewer = format_reviewer(r['author']['login'])
+                if reviewers.get(reviewer, 'COMMENTED') == 'COMMENTED':
+                    reviewers[reviewer] = r['state']
+            requested_reviewers = set([
+                format_reviewer(r['requestedReviewer']['login'])
+                for r in pr['reviewRequests']['nodes']
+                if r['requestedReviewer']['login'] != author])
             prs.append({
                 'user': DEVELOPERS[author],
                 'title': pr['title'],
@@ -133,7 +136,7 @@ for repo in get_open_prs(ORGANIZATION, 'OPEN'):
 prs.sort(key=lambda a: a['age'])
 for pr in prs:
     print("""\
-@{user} submitted {repo_name} "{title}", updated {age} ago:
+{user} submitted {repo_name} "{title}", updated {age} ago:
     - {url}""".format(**pr))
     if pr.get('reviewers'):
         print('    - Reviewed by: {reviewers}'.format(**pr))
