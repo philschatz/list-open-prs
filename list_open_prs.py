@@ -10,6 +10,21 @@ from urllib.request import Request, urlopen
 GITHUB_BEARER_TOKEN = os.environ['GITHUB_BEARER_TOKEN']
 GITHUB_ENDPOINT = 'https://api.github.com/graphql'
 ORGANIZATION = os.environ['ORGANIZATION']
+MAX_PR_AGE = int(os.environ.get('MAX_PR_AGE', 31))
+DEVELOPERS = {
+    # github username: slack userid, slack username
+    'karenc': ('<@U0F9C99ST>', '@karen'),
+    'pumazi': ('<@U0F988KSQ>', '@mulich'),
+    'therealmarv': ('<@U340WT25C>', '@therealmarv'),
+    'philschatz': ('<@U0F5LRG3Z>', '@phil'),
+    'm1yag1': ('<@U0F55RAAG>', '@mike'),
+}
+REVIEWERS = {
+    'helenemccarron': ('<@U0FU55RRT>', '@hélène'),
+    'tomjw64': ('<@U199K9DTJ>', '@Thomas'),
+    'brittany-johnson': ('<@U7FHVAJ4T>', '@BrittanyJ'),
+}
+REVIEWERS.update(DEVELOPERS)
 
 
 def query_github(query):
@@ -43,12 +58,13 @@ query {
                         author {
                             login
                         }
-                        reviews(first: 50) {
+                        reviews(last: 50) {
                             nodes {
                                 author {
                                     login
                                 }
                                 state
+                                createdAt
                             }
                         }
                         reviewRequests(first: 10) {
@@ -81,65 +97,125 @@ query {
             }
 
 
-def to_slack_user(github_username):
-    return REVIEWERS.get(github_username, github_username)
+def to_slack_user(github_username, mention=True):
+    if github_username in REVIEWERS:
+        if mention:
+            return REVIEWERS[github_username][0]
+        return REVIEWERS[github_username][1]
+    return github_username
 
 
-DEVELOPERS = {
-    # github username: slack userid
-    'karenc': '<@U0F9C99ST>', # karen
-    'pumazi': '<@U0F988KSQ>', # mulich
-    'therealmarv': '<@U340WT25C>', # therealmarv
-    'philschatz': '<@U0F5LRG3Z>', # phil
-    'm1yag1': '<@U0F55RAAG>', # mike
-}
-REVIEWERS = {
-    'helenemccarron': '<@U0FU55RRT>', # hélène
-    'tomjw64': '<@U199K9DTJ>', # Thomas
-    'brittany-johnson': '<@U7FHVAJ4T>', # BrittanyJ
-}
-REVIEWERS.update(DEVELOPERS)
+def to_datetime(string):
+    return datetime.strptime(string, '%Y-%m-%dT%H:%M:%SZ')
+
+
+def to_days_ago(date, today=datetime.today()):
+    return (today - date).days
+
+
+class PullRequest:
+    @classmethod
+    def from_api(cls, **struct):
+        self = cls()
+        self.reviews = Review.from_api(self, struct['author']['login'],
+                                       **struct.pop('reviews'))
+        self.review_requests = ReviewRequest.from_api(
+            **struct.pop('reviewRequests'))
+        struct['createdAt'] = to_datetime(struct['createdAt'])
+        struct['updatedAt'] = to_datetime(struct['updatedAt'])
+        self.fields = struct
+        self.age = to_days_ago(self.fields['updatedAt'])
+        self.should_display = self.age < MAX_PR_AGE and \
+            self.fields['author']['login'] in DEVELOPERS
+        return self
+
+    def newer_than(self, time):
+        return self.fields['updatedAt'] > time
+
+    def display_author(self):
+        return to_slack_user(self.fields['author']['login'],
+                             mention=self.author_actionable())
+
+    def author_actionable(self):
+        return self.fields['title'].startswith('WIP') or (
+            not self.review_requests and
+            not any(r.pending() for r in self.reviews))
+
+    def __str__(self):
+        s = """\
+{user} submitted {repo_name} "{title}", updated {age} ago:
+    - {url}
+""".format(user=self.display_author(),
+           repo_name=self.fields['repo_name'],
+           title=self.fields['title'],
+           age=(self.age == 1 and '1 day' or '{} days'.format(self.age)),
+           url=self.fields['url'])
+        if self.reviews:
+            s += '    - Reviewed by: {}\n'.format(
+                ', '.join(str(r) for r in self.reviews))
+        s += '    - Pending reviews from: {}'.format(
+            ', '.join(str(r) for r in self.review_requests) or 'N/A')
+        return s
+
+
+class Review:
+    @classmethod
+    def from_api(cls, pull_request, pull_request_author, **struct):
+        states = {}
+        created_at = {}
+        results = []
+        for r in struct['nodes']:
+            author = r['author']['login']
+            if author == pull_request_author:
+                continue
+            if states.get(author, 'COMMENTED') == 'COMMENTED':
+                states[author] = r['state']
+            if r['createdAt'] > created_at.get(author, ''):
+                created_at[author] = r['createdAt']
+        for author in states:
+            self = cls()
+            results.append(self)
+            self.fields = {
+                'author': author,
+                'createdAt': to_datetime(created_at[author]),
+                'state': states[author],
+            }
+            self.pull_request = pull_request
+        return results
+
+    def pending(self):
+        return self.fields['state'] != 'APPROVED' and \
+            self.pull_request.newer_than(self.fields['createdAt']) and \
+            not self.pull_request.fields['title'].startswith('WIP')
+
+    def __str__(self):
+        if self.pending():
+            user = to_slack_user(self.fields['author'])
+        else:
+            user = to_slack_user(self.fields['author'], mention=False)
+        return '{} ({})'.format(user, self.fields['state'])
+
+
+class ReviewRequest:
+    @classmethod
+    def from_api(cls, **struct):
+        results = []
+        for r in struct['nodes']:
+            results.append(cls())
+            results[-1].fields = r
+        return results
+
+    def __str__(self):
+        return to_slack_user(self.fields['requestedReviewer']['login'])
 
 
 prs = []
-today = datetime.today()
 for repo in get_open_prs(ORGANIZATION, 'OPEN'):
-    for pr in repo['pullRequests']:
-        updatedAt = datetime.strptime(pr['updatedAt'], '%Y-%m-%dT%H:%M:%SZ')
-        createdAt = datetime.strptime(pr['createdAt'], '%Y-%m-%dT%H:%M:%SZ')
-        author = pr['author']['login']
-        age = (today - updatedAt).days
-        if author in DEVELOPERS and age < 31:
-            reviewers = {}
-            for r in pr['reviews']['nodes']:
-                if r['author']['login'] == author:
-                    continue
-                reviewer = to_slack_user(r['author']['login'])
-                if reviewers.get(reviewer, 'COMMENTED') == 'COMMENTED':
-                    reviewers[reviewer] = r['state']
-            requested_reviewers = set([
-                to_slack_user(r['requestedReviewer']['login'])
-                for r in pr['reviewRequests']['nodes']
-                if r['requestedReviewer']['login'] != author])
-            prs.append({
-                'user': DEVELOPERS[author],
-                'title': pr['title'],
-                'age': age == 1 and '1 day' or '{} days'.format(age),
-                'url': pr['url'],
-                'reviewers': ', '.join([
-                    '{} ({})'.format(*item) for item in reviewers.items()]),
-                'requested_reviewers': ', '.join(
-                    requested_reviewers - reviewers.keys()) or 'N/A',
-                'repo_name': repo['name'],
-            })
+    for pull_request in repo['pullRequests']:
+        pr = PullRequest.from_api(repo_name=repo['name'], **pull_request)
+        if pr.should_display:
+            prs.append(pr)
 
-prs.sort(key=lambda a: a['age'])
+prs.sort(key=lambda a: a.age)
 for pr in prs:
-    print("""\
-{user} submitted {repo_name} "{title}", updated {age} ago:
-    - {url}""".format(**pr))
-    if pr.get('reviewers'):
-        print('    - Reviewed by: {reviewers}'.format(**pr))
-    if pr.get('requested_reviewers'):
-        print('    - Pending reviews from: {requested_reviewers}'.format(
-            **pr))
+    print(str(pr))
