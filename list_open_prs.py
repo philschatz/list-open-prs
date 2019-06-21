@@ -81,7 +81,7 @@ query {
             }
 
 
-def format_reviewer(github_username):
+def to_slack_user(github_username):
     return REVIEWERS.get(github_username, github_username)
 
 
@@ -114,11 +114,11 @@ for repo in get_open_prs(ORGANIZATION, 'OPEN'):
             for r in pr['reviews']['nodes']:
                 if r['author']['login'] == author:
                     continue
-                reviewer = format_reviewer(r['author']['login'])
+                reviewer = to_slack_user(r['author']['login'])
                 if reviewers.get(reviewer, 'COMMENTED') == 'COMMENTED':
                     reviewers[reviewer] = r['state']
             requested_reviewers = set([
-                format_reviewer(r['requestedReviewer']['login'])
+                to_slack_user(r['requestedReviewer']['login'])
                 for r in pr['reviewRequests']['nodes']
                 if r['requestedReviewer']['login'] != author])
             prs.append({
