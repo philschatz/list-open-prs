@@ -58,6 +58,13 @@ query {
                         author {
                             login
                         }
+                        commits(last: 1) {
+                            nodes {
+                                commit {
+                                    pushedDate
+                                }
+                            }
+                        }
                         reviews(last: 50) {
                             nodes {
                                 author {
@@ -117,27 +124,32 @@ class PullRequest:
     @classmethod
     def from_api(cls, **struct):
         self = cls()
-        self.reviews = Review.from_api(self, struct['author']['login'],
-                                       **struct.pop('reviews'))
+        self.reviews = Review.from_api(self, **struct.pop('reviews'))
         self.review_requests = ReviewRequest.from_api(
             **struct.pop('reviewRequests'))
+        self.pushed_date = to_datetime(
+            struct.pop('commits')['nodes'][0]['commit']['pushedDate'])
         struct['createdAt'] = to_datetime(struct['createdAt'])
         struct['updatedAt'] = to_datetime(struct['updatedAt'])
+        struct['author'] = struct.pop('author')['login']
         self.fields = struct
         self.age = to_days_ago(self.fields['updatedAt'])
         self.should_display = self.age < MAX_PR_AGE and \
-            self.fields['author']['login'] in DEVELOPERS
+            self.fields['author'] in DEVELOPERS
+        self.wip = self.fields['title'].startswith('WIP')
         return self
 
     def newer_than(self, time):
-        return self.fields['updatedAt'] > time
+        return self.pushed_date > time or any(
+            r.fields['author'] == self.fields['author']
+            and r.fields['createdAt'] > time for r in self.reviews)
 
     def display_author(self):
-        return to_slack_user(self.fields['author']['login'],
+        return to_slack_user(self.fields['author'],
                              mention=self.author_actionable())
 
     def author_actionable(self):
-        return self.fields['title'].startswith('WIP') or (
+        return self.wip or (
             not self.review_requests and
             not any(r.pending() for r in self.reviews))
 
@@ -150,8 +162,9 @@ class PullRequest:
            age=(self.age == 1 and '1 day' or '{} days'.format(self.age)),
            url=self.fields['url'])
         if self.reviews:
-            s += '    - Reviewed by: {}\n'.format(
-                ', '.join(str(r) for r in self.reviews))
+            s += '    - Reviewed by: {}\n'.format(', '.join(
+                str(r) for r in self.reviews
+                if r.fields['author'] != self.fields['author']))
         s += '    - Pending reviews from: {}'.format(
             ', '.join(str(r) for r in self.review_requests) or 'N/A')
         return s
@@ -159,14 +172,12 @@ class PullRequest:
 
 class Review:
     @classmethod
-    def from_api(cls, pull_request, pull_request_author, **struct):
+    def from_api(cls, pull_request, **struct):
         states = {}
         created_at = {}
         results = []
         for r in struct['nodes']:
             author = r['author']['login']
-            if author == pull_request_author:
-                continue
             if states.get(author, 'COMMENTED') == 'COMMENTED':
                 states[author] = r['state']
             if r['createdAt'] > created_at.get(author, ''):
@@ -185,7 +196,8 @@ class Review:
     def pending(self):
         return self.fields['state'] != 'APPROVED' and \
             self.pull_request.newer_than(self.fields['createdAt']) and \
-            not self.pull_request.fields['title'].startswith('WIP')
+            not self.pull_request.wip and \
+            self.fields['author'] != self.pull_request.fields['author']
 
     def __str__(self):
         if self.pending():
