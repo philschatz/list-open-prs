@@ -23,6 +23,7 @@ REVIEWERS = {
     'helenemccarron': ('<@U0FU55RRT>', '@hélène'),
     'tomjw64': ('<@U199K9DTJ>', '@Thomas'),
     'brittany-johnson': ('<@U7FHVAJ4T>', '@BrittanyJ'),
+    'scb6': ('<@U835RC4HH>', '@scott'),
 }
 REVIEWERS.update(DEVELOPERS)
 
