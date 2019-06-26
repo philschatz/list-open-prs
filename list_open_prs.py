@@ -18,6 +18,7 @@ DEVELOPERS = {
     'therealmarv': ('<@U340WT25C>', '@therealmarv'),
     'philschatz': ('<@U0F5LRG3Z>', '@phil'),
     'm1yag1': ('<@U0F55RAAG>', '@mike'),
+    'brenguyen711': ('<@UKPA5MS1X>', '@Brendaa'),
 }
 REVIEWERS = {
     'helenemccarron': ('<@U0FU55RRT>', '@hélène'),
