@@ -55,6 +55,7 @@ query {
                     nodes {
                         url
                         title
+                        number
                         createdAt
                         updatedAt
                         author {
@@ -157,9 +158,10 @@ class PullRequest:
 
     def __str__(self):
         s = """\
-{user} submitted {repo_name} "<{url}|{title}>", updated {age} ago:
+{user} submitted {repo_name}#{num} "<{url}|{title}>", updated {age} ago:
 """.format(user=self.display_author(),
            repo_name=self.fields['repo_name'],
+           num=self.fields['number'],
            title=self.fields['title'],
            age=(self.age == 1 and '1 day' or '{} days'.format(self.age)),
            url=self.fields['url'])
