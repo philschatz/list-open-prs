@@ -19,6 +19,7 @@ DEVELOPERS = {
     'philschatz': ('<@U0F5LRG3Z>', '@phil'),
     'm1yag1': ('<@U0F55RAAG>', '@mike'),
     'brenguyen711': ('<@UKPA5MS1X>', '@brenda'),
+    'omehes': ('<@UDGTHPLQ6>', '@Ottó'),
 }
 REVIEWERS = {
     'helenemccarron': ('<@U0FU55RRT>', '@hélène'),
