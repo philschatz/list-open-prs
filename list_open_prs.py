@@ -235,3 +235,5 @@ for repo in get_open_prs(ORGANIZATION, 'OPEN'):
 prs.sort(key=lambda a: a.age)
 for pr in prs:
     print(str(pr))
+print("<https://github.com/pulls/review-requested|PRs for you to review>")
+print("<https://github.com/karenc/list-open-prs|Source Code>")
